@@ -36,13 +36,13 @@ export default async function RootLayout({
 
   return (
     <html lang="en">
-      <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
+      <body className={`${geistSans.variable} bg-[#FFFBF1] ${geistMono.variable} antialiased`}>
 
         <Providers initialState={initialState}>
 
           <Navbar />
 
-          <main className="px-8 py-6">
+          <main className="px-8 py-6  h-full">
             {children}
           </main>
 
