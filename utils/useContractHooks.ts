@@ -665,6 +665,7 @@ export function useGetStudentExamScore(
   };
 }
 
+
 export function useGetUser(userAddress: `0x${string}` | undefined) {
   const result = useReadContract({
     address: PROOF_BASE_ADDRESS,
@@ -676,22 +677,49 @@ export function useGetUser(userAddress: `0x${string}` | undefined) {
     },
   });
 
-  type Response = readonly [string, number, boolean] | undefined;
-  const data = result.data as Response;
-
-  const transformedData: User | undefined = data
-    ? {
-        name: data[0],
-        role: data[1] as UserRole,
-        isRegistered: data[2],
+  const raw = result.data as
+    | readonly [string, bigint, boolean]
+    | {
+        0?: string;
+        1?: bigint;
+        2?: boolean;
+        name?: string;
+        role?: bigint;
+        isRegistered?: boolean;
       }
-    : undefined;
+    | undefined;
+
+  let transformedData: User | undefined;
+
+  if (raw) {
+    const name =
+      Array.isArray(raw) ? raw[0] : (raw as any).name ?? (raw as any)[0];
+
+    const role =
+      Array.isArray(raw) ? raw[1] : (raw as any).role ?? (raw as any)[1];
+
+    const isRegistered =
+      Array.isArray(raw) ? raw[2] : (raw as any).isRegistered ?? (raw as any)[2];
+
+    if (
+      typeof name === "string" &&
+      typeof isRegistered === "boolean" &&
+      role !== undefined
+    ) {
+      transformedData = {
+        name,
+        role: Number(role) as UserRole,
+        isRegistered,
+      };
+    }
+  }
 
   return {
     ...result,
     data: transformedData,
   };
 }
+
 
 export function useHasCompletedExam(
   examId: bigint | undefined,

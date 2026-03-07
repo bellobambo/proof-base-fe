@@ -704,4 +704,4 @@ export const PROOF_BASE_ABI = [
       ],
       "anonymous": false
     }
-  ]
+  ] as const;
