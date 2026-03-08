@@ -1,117 +1,625 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useAccount } from "wagmi";
+import { Drawer } from "antd";
+import { AnimatePresence, motion } from "framer-motion";
 import {
   useCreateCourse,
+  useCreateExam,
   useGetAllCourses,
   useGetUser,
   UserRole,
+  type QuestionOptions,
 } from "@/utils/useContractHooks";
+
+type ExamQuestionForm = {
+  text: string;
+  options: [string, string, string, string];
+  correctAnswer: number;
+};
+
+const emptyQuestion = (): ExamQuestionForm => ({
+  text: "",
+  options: ["", "", "", ""],
+  correctAnswer: 0,
+});
 
 export default function Courses() {
   const { address } = useAccount();
   const { data: user } = useGetUser(address);
 
-  const { createCourse, isPending } = useCreateCourse();
+  const {
+    createCourse,
+    isPending: isCoursePending,
+    isConfirming: isCourseConfirming,
+    isConfirmed: isCourseConfirmed,
+  } = useCreateCourse();
+
+  const {
+    createExam,
+    isPending: isExamPending,
+    isConfirming: isExamConfirming,
+    isConfirmed: isExamConfirmed,
+    error: createExamError,
+  } = useCreateExam();
+
   const { data: courses } = useGetAllCourses();
 
   const [title, setTitle] = useState("");
   const [showModal, setShowModal] = useState(false);
 
-  const isTutor = user?.role === UserRole.TUTOR;
+  const [showExamDrawer, setShowExamDrawer] = useState(false);
+  const [selectedCourseId, setSelectedCourseId] = useState<bigint | null>(null);
+  const [selectedCourseTitle, setSelectedCourseTitle] = useState("");
+  const [examTitle, setExamTitle] = useState("");
+  const [questions, setQuestions] = useState<ExamQuestionForm[]>([
+    emptyQuestion(),
+  ]);
+  const [uploadError, setUploadError] = useState("");
 
-  const handleCreate = () => {
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+
+  const isTutor = user?.role === UserRole.TUTOR;
+  const isCreatingCourse = isCoursePending || isCourseConfirming;
+  const isCreatingExam = isExamPending || isExamConfirming;
+
+  useEffect(() => {
+    if (isCourseConfirmed) {
+      setShowModal(false);
+      setTitle("");
+    }
+  }, [isCourseConfirmed]);
+
+  useEffect(() => {
+    if (isExamConfirmed) {
+      setShowExamDrawer(false);
+      resetExamForm();
+    }
+  }, [isExamConfirmed]);
+
+  const ownCourseIds = useMemo(() => {
+    if (!address || !courses?.length) return new Set<string>();
+
+    return new Set(
+      courses
+        .filter(
+          (course) => course.tutor.toLowerCase() === address.toLowerCase()
+        )
+        .map((course) => course.courseId.toString())
+    );
+  }, [address, courses]);
+
+  const handleCreateCourse = () => {
     const trimmed = title.trim();
     if (!trimmed) return;
-
     createCourse(trimmed);
-    setTitle("");
-    setShowModal(false);
+  };
+
+  const openExamDrawer = (courseId: bigint, courseTitle: string) => {
+    setSelectedCourseId(courseId);
+    setSelectedCourseTitle(courseTitle);
+    setShowExamDrawer(true);
+  };
+
+  const resetExamForm = () => {
+    setSelectedCourseId(null);
+    setSelectedCourseTitle("");
+    setExamTitle("");
+    setQuestions([emptyQuestion()]);
+    setUploadError("");
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
+    }
+  };
+
+  const closeExamDrawer = () => {
+    if (isCreatingExam) return;
+    setShowExamDrawer(false);
+    resetExamForm();
+  };
+
+  const addQuestion = () => {
+    setQuestions((prev) => [...prev, emptyQuestion()]);
+  };
+
+  const removeQuestion = (index: number) => {
+    setQuestions((prev) => {
+      if (prev.length === 1) return prev;
+      return prev.filter((_, i) => i !== index);
+    });
+  };
+
+  const updateQuestionText = (index: number, value: string) => {
+    setQuestions((prev) =>
+      prev.map((q, i) => (i === index ? { ...q, text: value } : q))
+    );
+  };
+
+  const updateQuestionOption = (
+    questionIndex: number,
+    optionIndex: number,
+    value: string
+  ) => {
+    setQuestions((prev) =>
+      prev.map((q, i) => {
+        if (i !== questionIndex) return q;
+
+        const nextOptions = [...q.options] as [string, string, string, string];
+        nextOptions[optionIndex] = value;
+
+        return {
+          ...q,
+          options: nextOptions,
+        };
+      })
+    );
+  };
+
+  const updateCorrectAnswer = (index: number, value: number) => {
+    setQuestions((prev) =>
+      prev.map((q, i) =>
+        i === index ? { ...q, correctAnswer: value } : q
+      )
+    );
+  };
+
+  const handleExamFileUpload = async (
+    e: React.ChangeEvent<HTMLInputElement>
+  ) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setUploadError("");
+
+    try {
+      const text = await file.text();
+      const parsed = JSON.parse(text) as {
+        title?: string;
+        questions?: Array<{
+          text?: string;
+          options?: string[];
+          correctAnswer?: number;
+        }>;
+      };
+
+      if (!parsed.title || !Array.isArray(parsed.questions)) {
+        throw new Error("Invalid JSON structure.");
+      }
+
+      const normalizedQuestions: ExamQuestionForm[] = parsed.questions.map(
+        (q, idx) => {
+          if (
+            !q.text ||
+            !Array.isArray(q.options) ||
+            q.options.length !== 4 ||
+            typeof q.correctAnswer !== "number" ||
+            q.correctAnswer < 0 ||
+            q.correctAnswer > 3
+          ) {
+            throw new Error(`Invalid question at index ${idx + 1}.`);
+          }
+
+          return {
+            text: q.text,
+            options: [
+              q.options[0] ?? "",
+              q.options[1] ?? "",
+              q.options[2] ?? "",
+              q.options[3] ?? "",
+            ],
+            correctAnswer: q.correctAnswer,
+          };
+        }
+      );
+
+      setExamTitle(parsed.title);
+      setQuestions(normalizedQuestions);
+    } catch (error) {
+      setUploadError(
+        error instanceof Error
+          ? error.message
+          : "Failed to parse uploaded JSON."
+      );
+    }
+  };
+
+  const validateExam = () => {
+    if (!selectedCourseId) return "No course selected.";
+    if (!examTitle.trim()) return "Exam title is required.";
+    if (!questions.length) return "Add at least one question.";
+
+    for (let i = 0; i < questions.length; i++) {
+      const q = questions[i];
+
+      if (!q.text.trim()) {
+        return `Question ${i + 1} needs text.`;
+      }
+
+      const hasEmptyOption = q.options.some((opt) => !opt.trim());
+      if (hasEmptyOption) {
+        return `Question ${i + 1} must have all 4 options filled.`;
+      }
+
+      if (q.correctAnswer < 0 || q.correctAnswer > 3) {
+        return `Question ${i + 1} must have a valid correct answer.`;
+      }
+    }
+
+    return null;
+  };
+
+  const handleCreateExam = () => {
+    const validationError = validateExam();
+    if (validationError) {
+      setUploadError(validationError);
+      return;
+    }
+
+    if (!selectedCourseId) return;
+
+    const questionTexts = questions.map((q) => q.text.trim());
+    const questionOptions = questions.map(
+      (q) =>
+        [
+          q.options[0].trim(),
+          q.options[1].trim(),
+          q.options[2].trim(),
+          q.options[3].trim(),
+        ] as QuestionOptions
+    );
+    const correctAnswers = questions.map((q) => BigInt(q.correctAnswer));
+
+    createExam(
+      selectedCourseId,
+      examTitle.trim(),
+      questionTexts,
+      questionOptions,
+      correctAnswers
+    );
   };
 
   return (
-    <div className="max-w-6xl mx-auto mt-10 space-y-6">
-
-      {/* HEADER */}
-      <div className="flex justify-between items-center">
+    <div className="mx-auto mt-10 max-w-6xl space-y-6">
+      <div className="flex items-center justify-between">
         <h2 className="text-xl font-semibold">Courses</h2>
 
         {isTutor && (
           <button
             onClick={() => setShowModal(true)}
-            className="px-4 py-2 bg-[#E36A6A] text-white rounded shadow hover:opacity-90"
+            className="cursor-pointer rounded bg-[#E36A6A] px-4 py-2 text-white shadow hover:opacity-90"
           >
             + Create Course
           </button>
         )}
       </div>
 
-      {/* COURSE LIST */}
-      <div className="p-6   rounded-lg">
-        <div className="space-y-3 text-center">
-          {courses?.length === 0 && (
-            <p className="text-gray-500">No courses yet</p>
-          )}
+      <div className="p-6">
+        {courses?.length === 0 ? (
+          <p className="text-center text-gray-500">No courses yet</p>
+        ) : (
+          <div className="grid grid-cols-1 justify-items-center gap-6 sm:grid-cols-2 xl:grid-cols-4">
+            {courses?.map((course) => {
+              const canManageExam =
+                isTutor && ownCourseIds.has(course.courseId.toString());
 
-          {courses?.map((course) => (
-            <div
-              key={course.courseId.toString()}
-              className="p-4 border rounded flex justify-between"
+              return (
+                <div
+                  key={course.courseId.toString()}
+                  className="w-[300px] rounded-2xl bg-[#E36A6A] p-5 shadow-md transition hover:-translate-y-1 hover:shadow-xl"
+                >
+                  <div className="flex min-h-[210px] flex-col justify-between">
+                    <div>
+                      <h3 className="line-clamp-2 text-lg font-semibold text-[#FFFBF1]">
+                        {course.title}
+                      </h3>
+
+                      <p className="mt-3 text-sm text-[#FFFBF1]/85">
+                        Lecturer: {course.tutorName}
+                      </p>
+                    </div>
+
+                    <div className="mt-6 space-y-3 border-t border-white/15 pt-4">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs text-[#FFFBF1]/75">
+                          ID: {course.courseId.toString()}
+                        </span>
+
+                        <span
+                          className={`rounded-full px-2.5 py-1 text-[11px] font-medium ${
+                            course.isActive
+                              ? "bg-white/15 text-[#FFFBF1]"
+                              : "bg-black/10 text-[#FFFBF1]/80"
+                          }`}
+                        >
+                          {course.isActive ? "Active" : "Inactive"}
+                        </span>
+                      </div>
+
+                      {canManageExam && (
+                        <button
+                          onClick={() =>
+                            openExamDrawer(course.courseId, course.title)
+                          }
+                          className="w-full cursor-pointer rounded-xl bg-[#FFFBF1] px-4 py-2.5 text-sm font-semibold text-[#E36A6A] transition hover:opacity-90"
+                        >
+                          + Add Exam
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      <AnimatePresence>
+        {showModal && (
+          <motion.div
+            className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 px-4 py-6 sm:items-center"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={() => {
+              if (!isCreatingCourse) setShowModal(false);
+            }}
+          >
+            <motion.div
+              initial={{ y: 80, opacity: 0, scale: 0.98 }}
+              animate={{ y: 0, opacity: 1, scale: 1 }}
+              exit={{ y: 80, opacity: 0, scale: 0.98 }}
+              transition={{ duration: 0.28, ease: "easeOut" }}
+              onClick={(e) => e.stopPropagation()}
+              className="w-full max-w-lg min-h-[40vh] overflow-y-auto rounded-[10px] bg-[#FFFBF1] p-7 shadow-2xl"
             >
-              <div>
-                <p className="font-medium">{course.title}</p>
-                <p className="text-sm text-gray-500">
-                  Lecturer: {course.tutorName}
+              <div className="mx-auto mb-6 h-1.5 w-14 rounded-full bg-black/10" />
+
+              <div className="mb-6">
+                <h2 className="text-xl font-semibold text-gray-900">
+                  Create Course
+                </h2>
+                <p className="mt-1 text-sm text-gray-500">
+                  Add a new course for your students.
                 </p>
               </div>
 
-              <span className="text-sm text-gray-400">
-                ID: {course.courseId.toString()}
-              </span>
-            </div>
-          ))}
+              <div className="space-y-3">
+                <label className="block text-sm font-medium text-gray-700">
+                  Course Title
+                </label>
+
+                <input
+                  type="text"
+                  placeholder="e.g. Introduction to Blockchain"
+                  value={title}
+                  onChange={(e) => setTitle(e.target.value)}
+                  disabled={isCreatingCourse}
+                  className="w-full rounded-xl bg-white px-4 py-3 text-sm text-gray-800 outline-none ring-1 ring-black/10 transition focus:ring-2 focus:ring-black/20 disabled:opacity-60"
+                />
+              </div>
+
+              <div className="mt-8 flex justify-end gap-3">
+                <button
+                  onClick={() => setShowModal(false)}
+                  disabled={isCreatingCourse}
+                  className="cursor-pointer rounded-[10px] bg-white px-4 py-2.5 text-sm font-medium text-gray-700 ring-1 ring-black/10 transition hover:bg-black/[0.03] disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+
+                <button
+                  onClick={handleCreateCourse}
+                  disabled={isCreatingCourse || !title.trim()}
+                  className="cursor-pointer rounded-[10px] bg-[#E36A6A] px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {isCoursePending
+                    ? "Confirm in Wallet..."
+                    : isCourseConfirming
+                    ? "Creating..."
+                    : "Create"}
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+   <Drawer
+  title={
+    <div>
+      <h2 className="text-xl font-semibold text-gray-900">Add Exam</h2>
+      <p className="mt-1 text-sm font-normal text-gray-500">
+        Course: {selectedCourseTitle}
+      </p>
+    </div>
+  }
+  placement="right"
+  open={showExamDrawer}
+  onClose={closeExamDrawer}
+  width={700}
+  destroyOnClose
+  maskClosable={!isCreatingExam}
+  closable={!isCreatingExam}
+  styles={{
+    header: {
+      background: "#FFFBF1",
+      borderBottom: "1px solid rgba(0,0,0,0.08)",
+      padding: "20px 24px",
+    },
+    body: {
+      background: "#FFFBF1",
+      padding: "24px",
+    },
+  }}
+>
+  <div className="space-y-6">
+    <div className="space-y-2">
+      <label className="block text-sm font-medium text-gray-700">
+        Exam Title
+      </label>
+      <input
+        type="text"
+        value={examTitle}
+        onChange={(e) => setExamTitle(e.target.value)}
+        disabled={isCreatingExam}
+        placeholder="e.g. Quiz 1"
+        className="w-full rounded-xl bg-white px-4 py-3 text-sm text-gray-800 outline-none ring-1 ring-black/10 focus:ring-2 focus:ring-black/20 disabled:opacity-60"
+      />
+    </div>
+
+    <div className="rounded-2xl bg-white p-4 ring-1 ring-black/10">
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <h3 className="text-sm font-semibold text-gray-900">
+            Upload Exam JSON
+          </h3>
+          <p className="mt-1 text-xs text-gray-500">
+            Upload a JSON file with title, questions, options, and
+            correctAnswer.
+          </p>
         </div>
+
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept=".json,application/json"
+          onChange={handleExamFileUpload}
+          disabled={isCreatingExam}
+          className="block text-xs text-gray-600"
+        />
+      </div>
+    </div>
+
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <h3 className="text-base font-semibold text-gray-900">Questions</h3>
+
+        <button
+          onClick={addQuestion}
+          type="button"
+          disabled={isCreatingExam}
+          className="rounded-lg bg-[#E36A6A] px-3 py-2 text-sm font-medium text-white hover:opacity-90 disabled:opacity-50"
+        >
+          + Add Question
+        </button>
       </div>
 
-      {/* MODAL */}
-      {showModal && (
-        <div className="fixed inset-0 flex items-center justify-center bg-black/40 z-50">
-          
-          <div className="bg-white rounded-lg shadow-lg w-[400px] p-6 space-y-4">
-            
-            <h2 className="text-lg font-semibold">Create Course</h2>
+      {questions.map((question, questionIndex) => (
+        <div
+          key={questionIndex}
+          className="space-y-4 rounded-2xl bg-white p-4 ring-1 ring-black/10"
+        >
+          <div className="flex items-center justify-between">
+            <h4 className="text-sm font-semibold text-gray-900">
+              Question {questionIndex + 1}
+            </h4>
 
-            <input
-              type="text"
-              placeholder="Course title"
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              className="w-full border rounded px-3 py-2"
-            />
-
-            <div className="flex justify-end gap-3">
-              
+            {questions.length > 1 && (
               <button
-                onClick={() => setShowModal(false)}
-                className="px-3 py-2 border rounded"
+                type="button"
+                onClick={() => removeQuestion(questionIndex)}
+                disabled={isCreatingExam}
+                className="text-sm font-medium text-red-500 disabled:opacity-50"
               >
-                Cancel
+                Remove
               </button>
-
-              <button
-                onClick={handleCreate}
-                disabled={isPending}
-                className="px-4 py-2 bg-[#E36A6A] text-white rounded"
-              >
-                {isPending ? "Creating..." : "Create"}
-              </button>
-
-            </div>
+            )}
           </div>
 
+          <div className="space-y-2">
+            <label className="block text-sm font-medium text-gray-700">
+              Question Text
+            </label>
+            <textarea
+              value={question.text}
+              onChange={(e) =>
+                updateQuestionText(questionIndex, e.target.value)
+              }
+              disabled={isCreatingExam}
+              rows={3}
+              className="w-full rounded-xl bg-[#FFFBF1] px-4 py-3 text-sm text-gray-800 outline-none ring-1 ring-black/10 focus:ring-2 focus:ring-black/20 disabled:opacity-60"
+              placeholder="Enter the question"
+            />
+          </div>
+
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            {question.options.map((option, optionIndex) => (
+              <div key={optionIndex} className="space-y-2">
+                <label className="block text-sm font-medium text-gray-700">
+                  Option {optionIndex + 1}
+                </label>
+                <input
+                  type="text"
+                  value={option}
+                  onChange={(e) =>
+                    updateQuestionOption(
+                      questionIndex,
+                      optionIndex,
+                      e.target.value
+                    )
+                  }
+                  disabled={isCreatingExam}
+                  className="w-full rounded-xl bg-[#FFFBF1] px-4 py-3 text-sm text-gray-800 outline-none ring-1 ring-black/10 focus:ring-2 focus:ring-black/20 disabled:opacity-60"
+                  placeholder={`Option ${optionIndex + 1}`}
+                />
+              </div>
+            ))}
+          </div>
+
+          <div className="space-y-2">
+            <label className="block text-sm font-medium text-gray-700">
+              Correct Answer
+            </label>
+
+            <select
+              value={question.correctAnswer}
+              onChange={(e) =>
+                updateCorrectAnswer(questionIndex, Number(e.target.value))
+              }
+              disabled={isCreatingExam}
+              className="w-full rounded-xl bg-[#FFFBF1] px-4 py-3 text-sm text-gray-800 outline-none ring-1 ring-black/10 focus:ring-2 focus:ring-black/20 disabled:opacity-60"
+            >
+              <option value={0}>Option 1</option>
+              <option value={1}>Option 2</option>
+              <option value={2}>Option 3</option>
+              <option value={3}>Option 4</option>
+            </select>
+          </div>
         </div>
-      )}
+      ))}
+    </div>
+
+    {(uploadError || createExamError) && (
+      <div className="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-600 ring-1 ring-red-200">
+        {uploadError || createExamError?.message}
+      </div>
+    )}
+
+    <div className="flex justify-end gap-3 border-t border-black/10 pt-4">
+      <button
+        onClick={closeExamDrawer}
+        disabled={isCreatingExam}
+        className="rounded-xl bg-white px-4 py-2.5 text-sm font-medium text-gray-700 ring-1 ring-black/10 disabled:opacity-50"
+      >
+        Cancel
+      </button>
+
+      <button
+        onClick={handleCreateExam}
+        disabled={isCreatingExam || !examTitle.trim()}
+        className="rounded-xl bg-[#E36A6A] px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:opacity-90 disabled:opacity-50"
+      >
+        {isExamPending
+          ? "Confirm in Wallet..."
+          : isExamConfirming
+          ? "Creating Exam..."
+          : "Create Exam"}
+      </button>
+    </div>
+  </div>
+</Drawer>
     </div>
   );
 }
