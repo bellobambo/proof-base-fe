@@ -12,7 +12,9 @@
     "@coinbase/onchainkit": "^1.1.2",
     "antd": "^6.3.1",
     "framer-motion": "^12.35.1",
+    "mammoth": "^1.11.0",
     "next": "16.1.6",
+    "openai": "^6.27.0",
     "react": "19.2.3",
     "react-dom": "19.2.3"
   },
