@@ -40,6 +40,37 @@ type CourseCardProps = {
   openExamDrawer: (courseId: bigint, courseTitle: string) => void;
 };
 
+const EXAM_UPLOAD_TEMPLATE = {
+  title: "Sample Exam Title",
+  questions: [
+    {
+      text: "What is the capital of France?",
+      options: ["Berlin", "Madrid", "Paris", "Rome"],
+      correctAnswer: 2,
+    },
+    {
+      text: "Which data type is used to store true or false values?",
+      options: ["string", "boolean", "number", "array"],
+      correctAnswer: 1,
+    },
+  ],
+};
+
+function downloadExamTemplate() {
+  const blob = new Blob([JSON.stringify(EXAM_UPLOAD_TEMPLATE, null, 2)], {
+    type: "application/json",
+  });
+
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = "exam-upload-template.json";
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+}
+
 function CourseCard({
   course,
   address,
@@ -63,7 +94,7 @@ function CourseCard({
   };
 
   return (
-    <div className="w-[300px] rounded-2xl bg-[#E36A6A] p-5 shadow-md transition hover:-translate-y-1 hover:shadow-xl">
+    <div className="w-full max-w-md rounded-2xl bg-[#E36A6A] p-5 shadow-md transition hover:-translate-y-1 hover:shadow-xl">
       <div className="flex min-h-[210px] flex-col justify-between">
         <div>
           <h3 className="line-clamp-2 text-lg font-semibold text-[#FFFBF1]">
@@ -131,8 +162,7 @@ function CourseCard({
 export default function Courses() {
   const { address } = useAccount();
   const { data: user } = useGetUser(address);
-    console.log("User data:", user);
-
+  console.log("User data:", user);
 
   const {
     createCourse,
@@ -420,7 +450,7 @@ export default function Courses() {
   };
 
   return (
-    <div className="mx-auto mt-10 max-w-6xl space-y-6">
+    <div className="mx-auto mt-10 w-full max-w-6xl px-4 sm:px-6 lg:px-8 space-y-6">
       <div className="flex items-center justify-between">
         <h2 className="text-xl font-semibold">Courses</h2>
 
@@ -443,11 +473,11 @@ export default function Courses() {
         </div>
       </div>
 
-      <div className="p-6">
+      <div>
         {courses?.length === 0 ? (
-          <p className="text-center text-gray-500">No courses yet</p>
+          <p className="py-10 text-center text-gray-500">No courses yet</p>
         ) : (
-          <div className="grid grid-cols-1 justify-items-center gap-6 sm:grid-cols-2 xl:grid-cols-4">
+          <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
             {courses?.map((course) => {
               const canManageExam =
                 isTutor && ownCourseIds.has(course.courseId.toString());
@@ -467,7 +497,6 @@ export default function Courses() {
           </div>
         )}
       </div>
-
       <AnimatePresence>
         {showModal && (
           <motion.div
@@ -630,13 +659,34 @@ export default function Courses() {
 
             {inputMode === "document" && (
               <div className="mt-4 rounded-xl bg-[#FFFBF1] p-4 ring-1 ring-black/10">
-                <h4 className="text-sm font-semibold text-gray-900">
-                  Upload Already-Prepared Questions & Answers
-                </h4>
-                <p className="mt-1 text-xs text-gray-500">
-                  Supports .json, .txt, .md, .docx. The server will normalize
-                  the document into your exam structure.
-                </p>
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                  <div>
+                    <h4 className="text-sm font-semibold text-gray-900">
+                      Upload Already-Prepared Questions & Answers
+                    </h4>
+                    <p className="mt-1 text-xs text-gray-500">
+                      Supports .json, .txt, .md, .docx. The server will
+                      normalize the document into your exam structure.
+                    </p>
+                    <p className="mt-2 text-xs text-gray-500">
+                      For JSON uploads, use{" "}
+                      <code className="rounded bg-white px-1 py-0.5">
+                        correctAnswer
+                      </code>{" "}
+                      as a zero-based index: 0 = Option 1, 1 = Option 2, 2 =
+                      Option 3, 3 = Option 4.
+                    </p>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={downloadExamTemplate}
+                    disabled={isCreatingExam}
+                    className="rounded-xl bg-white px-4 py-2 text-xs font-semibold text-[#E36A6A] ring-1 ring-[#E36A6A]/20 transition hover:bg-[#FFF4F4] disabled:opacity-50"
+                  >
+                    Download Template
+                  </button>
+                </div>
 
                 <input
                   ref={importFileInputRef}
@@ -644,7 +694,7 @@ export default function Courses() {
                   accept=".json,.txt,.md,.docx,application/json,text/plain,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
                   onChange={handleExistingExamUpload}
                   disabled={isCreatingExam}
-                  className="mt-3 cursor-pointer block text-xs text-gray-600"
+                  className="mt-4 block cursor-pointer text-xs text-gray-600"
                 />
               </div>
             )}
@@ -693,7 +743,7 @@ export default function Courses() {
                       type="button"
                       onClick={() => removeQuestion(questionIndex)}
                       disabled={isCreatingExam}
-                      className="text-sm font-medium text-red-500 disabled:opacity-50"
+                      className="text-sm cursor-pointer font-medium text-red-500 disabled:opacity-50"
                     >
                       Remove
                     </button>
@@ -766,7 +816,7 @@ export default function Courses() {
                 onClick={addQuestion}
                 type="button"
                 disabled={isCreatingExam}
-                className="rounded-xl bg-[#E36A6A] px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:opacity-90 disabled:opacity-50"
+                className="rounded-xl cursor-pointer bg-[#E36A6A] px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:opacity-90 disabled:opacity-50"
               >
                 + Add Question
               </button>
@@ -783,7 +833,7 @@ export default function Courses() {
             <button
               onClick={closeExamDrawer}
               disabled={isCreatingExam}
-              className="rounded-xl bg-white px-4 py-2.5 text-sm font-medium text-gray-700 ring-1 ring-black/10 disabled:opacity-50"
+              className="rounded-xl cursor-pointer bg-white px-4 py-2.5 text-sm font-medium text-gray-700 ring-1 ring-black/10 disabled:opacity-50"
             >
               Cancel
             </button>
@@ -791,7 +841,7 @@ export default function Courses() {
             <button
               onClick={handleCreateExam}
               disabled={isCreatingExam || !examTitle.trim()}
-              className="rounded-xl bg-[#E36A6A] px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:opacity-90 disabled:opacity-50"
+              className="rounded-xl cursor-pointer bg-[#E36A6A] px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:opacity-90 disabled:opacity-50"
             >
               {isProcessingFile
                 ? "Processing File..."

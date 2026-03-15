@@ -8,7 +8,6 @@ export default function Navbar() {
   const { address } = useAccount();
   const { data: user } = useGetUser(address);
 
-  console.log("User data:", user);
 
   const roleLabel =
     user?.role === 0 ? "Tutor" : user?.role === 1 ? "Student" : "";

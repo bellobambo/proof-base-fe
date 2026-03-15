@@ -112,7 +112,7 @@ function normalizeExamShape(payload: any): ParsedExam {
         ],
         correctAnswer: q.correctAnswer,
       };
-    }
+    },
   );
 
   console.log("[exam-doc] normalized exam payload", {
@@ -136,18 +136,12 @@ export async function POST(req: Request) {
 
     if (!(file instanceof File)) {
       console.warn("[exam-doc] request rejected: no file uploaded");
-      return NextResponse.json(
-        { error: "No file uploaded." },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: "No file uploaded." }, { status: 400 });
     }
 
     if (mode !== "normalize" && mode !== "generate") {
       console.warn("[exam-doc] request rejected: invalid mode", { mode });
-      return NextResponse.json(
-        { error: "Invalid mode." },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: "Invalid mode." }, { status: 400 });
     }
 
     console.log("[exam-doc] request received", {
@@ -166,7 +160,7 @@ export async function POST(req: Request) {
       });
       return NextResponse.json(
         { error: "Could not extract any text from the uploaded file." },
-        { status: 400 }
+        { status: 400 },
       );
     }
 
@@ -210,7 +204,6 @@ Rules:
 
     const response = await client.responses.create({
       model: "gpt-5-mini",
-      temperature: 0.2,
       input: [
         {
           role: "system",
@@ -266,7 +259,7 @@ Rules:
             ? error.message
             : "Failed to process uploaded document.",
       },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }

@@ -9,8 +9,96 @@ import {
   useGetUser,
   useGetExamQuestions,
   useTakeExam,
+  useIsEnrolledInCourse,
   UserRole,
 } from "@/utils/useContractHooks";
+
+type ExamCardProps = {
+  exam: {
+    examId: bigint;
+    courseId: bigint;
+    title: string;
+    questionCount: bigint;
+    isActive: boolean;
+    creator: `0x${string}`;
+  };
+  address?: `0x${string}`;
+  isStudent: boolean;
+  openExamDrawer: (examId: bigint, examTitle: string) => void;
+};
+
+function ExamCard({ exam, address, isStudent, openExamDrawer }: ExamCardProps) {
+  const { data: isEnrolled } = useIsEnrolledInCourse(
+    exam.courseId,
+    isStudent ? address : undefined,
+  );
+
+  const enrolled = Boolean(isEnrolled);
+  const canTakeExam = !isStudent || enrolled;
+
+  return (
+    <div className="rounded-2xl border border-[#E36A6A] bg-[#FFFBF1] p-5 shadow-sm transition hover:-translate-y-1 hover:shadow-md">
+      <div className="flex min-h-[180px] flex-col justify-between">
+        <div className="space-y-3">
+          <h3 className="line-clamp-2 text-lg font-semibold text-[#E36A6A]">
+            {exam.title}
+          </h3>
+
+          <div className="space-y-1 text-sm text-gray-700">
+            <p>Exam ID: {exam.examId.toString()}</p>
+            <p>Course ID: {exam.courseId.toString()}</p>
+            <p>Questions: {exam.questionCount.toString()}</p>
+          </div>
+        </div>
+
+        <div className="mt-5 space-y-3 border-t border-gray-200 pt-4">
+          <div className="flex items-center justify-between">
+            <span
+              className={`rounded-full px-2.5 py-1 text-[11px] font-medium ${
+                exam.isActive
+                  ? "bg-green-50 text-green-700 ring-1 ring-green-200"
+                  : "bg-gray-100 text-gray-600 ring-1 ring-gray-200"
+              }`}
+            >
+              {exam.isActive ? "Active" : "Inactive"}
+            </span>
+
+            <span className="text-xs text-gray-500">
+              Creator:{" "}
+              {`${exam.creator.slice(0, 6)}...${exam.creator.slice(-4)}`}
+            </span>
+          </div>
+
+          {/* {isStudent && !enrolled && (
+            <p className="text-xs font-medium text-red-500">
+              Enroll in this course to take the exam.
+            </p>
+          )} */}
+
+          <button
+            type="button"
+            onClick={() => {
+              if (!canTakeExam) return;
+              openExamDrawer(exam.examId, exam.title);
+            }}
+            disabled={!canTakeExam}
+            className={`block w-full rounded-xl px-4 py-2.5 text-center text-sm font-semibold transition ${
+              canTakeExam
+                ? "cursor-pointer bg-[#E36A6A] text-white hover:opacity-90"
+                : "cursor-not-allowed bg-gray-200 text-gray-500"
+            }`}
+          >
+            {isStudent
+              ? enrolled
+                ? "Answer Questions"
+                : "Enroll to Take Exam"
+              : "View Questions"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 const Exams = () => {
   const { address } = useAccount();
@@ -48,6 +136,14 @@ const Exams = () => {
     return exams.find((exam) => exam.examId === selectedExamId) ?? null;
   }, [exams, selectedExamId]);
 
+  const { data: isEnrolledForSelectedExam, isLoading: isEnrollmentLoading } =
+    useIsEnrolledInCourse(
+      selectedExam?.courseId,
+      isStudent ? address : undefined,
+    );
+
+  const canTakeSelectedExam = !isStudent || Boolean(isEnrolledForSelectedExam);
+
   useEffect(() => {
     if (openDrawer && questionTexts.length) {
       setSelectedAnswers(new Array(questionTexts.length).fill(-1));
@@ -55,6 +151,10 @@ const Exams = () => {
   }, [openDrawer, questionTexts.length]);
 
   const openExamDrawer = (examId: bigint, examTitle: string) => {
+    const exam = exams.find((item) => item.examId === examId);
+
+    if (!exam) return;
+
     setSelectedExamId(examId);
     setSelectedExamTitle(examTitle);
     setSelectedAnswers([]);
@@ -72,7 +172,7 @@ const Exams = () => {
   };
 
   const handleSelectAnswer = (questionIndex: number, optionIndex: number) => {
-    if (!isStudent) return;
+    if (!isStudent || !canTakeSelectedExam || isSubmitting) return;
 
     setSelectedAnswers((prev) => {
       const next = [...prev];
@@ -83,6 +183,11 @@ const Exams = () => {
 
   const handleSubmitExam = () => {
     if (!isStudent || selectedExamId === null) return;
+
+    if (!canTakeSelectedExam) {
+      setSubmitError("You must enroll in this course before taking the exam.");
+      return;
+    }
 
     if (selectedAnswers.length !== questionTexts.length) {
       setSubmitError("Questions are not fully loaded yet.");
@@ -144,53 +249,15 @@ const Exams = () => {
             <p className="text-sm text-gray-500">No exams available yet.</p>
           </div>
         ) : (
-          <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 xl:grid-cols-3">
+                <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 xl:grid-cols-3">
             {exams.map((exam) => (
-              <div
+              <ExamCard
                 key={exam.examId.toString()}
-                className="rounded-2xl border border-[#E36A6A] bg-[#FFFBF1] p-5 shadow-sm transition hover:-translate-y-1 hover:shadow-md"
-              >
-                <div className="flex min-h-[180px] flex-col justify-between">
-                  <div className="space-y-3">
-                    <h3 className="line-clamp-2 text-lg font-semibold text-[#E36A6A]">
-                      {exam.title}
-                    </h3>
-
-                    <div className="space-y-1 text-sm text-gray-700">
-                      <p>Exam ID: {exam.examId.toString()}</p>
-                      <p>Course ID: {exam.courseId.toString()}</p>
-                      <p>Questions: {exam.questionCount.toString()}</p>
-                    </div>
-                  </div>
-
-                  <div className="mt-5 space-y-3 border-t border-gray-200 pt-4">
-                    <div className="flex items-center justify-between">
-                      <span
-                        className={`rounded-full px-2.5 py-1 text-[11px] font-medium ${
-                          exam.isActive
-                            ? "bg-green-50 text-green-700 ring-1 ring-green-200"
-                            : "bg-gray-100 text-gray-600 ring-1 ring-gray-200"
-                        }`}
-                      >
-                        {exam.isActive ? "Active" : "Inactive"}
-                      </span>
-
-                      <span className="text-xs text-gray-500">
-                        Creator:{" "}
-                        {`${exam.creator.slice(0, 6)}...${exam.creator.slice(-4)}`}
-                      </span>
-                    </div>
-
-                    <button
-                      type="button"
-                      onClick={() => openExamDrawer(exam.examId, exam.title)}
-                      className="block w-full cursor-pointer rounded-xl bg-[#E36A6A] px-4 py-2.5 text-center text-sm font-semibold text-white transition hover:opacity-90"
-                    >
-                      {isStudent ? "Answer Questions" : "View Questions"}
-                    </button>
-                  </div>
-                </div>
-              </div>
+                exam={exam}
+                address={address}
+                isStudent={!!isStudent}
+                openExamDrawer={openExamDrawer}
+              />
             ))}
           </div>
         )}
@@ -262,33 +329,41 @@ const Exams = () => {
                     <p className="text-sm text-gray-800">{question}</p>
 
                     <div className="space-y-2">
-                      {questionOptions[questionIndex]?.map((option, optionIndex) => {
-                        const isSelected =
-                          selectedAnswers[questionIndex] === optionIndex;
+                      {questionOptions[questionIndex]?.map(
+                        (option, optionIndex) => {
+                          const isSelected =
+                            selectedAnswers[questionIndex] === optionIndex;
 
-                        return (
-                          <button
+                          return (
+                                                    <button
                             key={optionIndex}
                             type="button"
                             onClick={() =>
                               handleSelectAnswer(questionIndex, optionIndex)
                             }
-                            disabled={!isStudent || isSubmitting}
+                            disabled={
+                              !isStudent || !canTakeSelectedExam || isSubmitting
+                            }
                             className={`w-full rounded-xl border px-4 py-3 text-left text-sm transition ${
-                              isStudent
+                              isStudent && canTakeSelectedExam
                                 ? isSelected
                                   ? "border-[#E36A6A] bg-[#FFF1F1] text-[#E36A6A]"
                                   : "border-gray-200 bg-[#FFFBF1] text-gray-800 hover:border-[#E36A6A]"
-                                : "cursor-default border-gray-200 bg-[#FFFBF1] text-gray-800"
-                            } ${(!isStudent || isSubmitting) ? "opacity-90" : ""}`}
+                                : "cursor-not-allowed border-gray-200 bg-[#F5F5F5] text-gray-500"
+                            } ${
+                              !isStudent || !canTakeSelectedExam || isSubmitting
+                                ? "opacity-90"
+                                : ""
+                            }`}
                           >
-                            <span className="font-medium">
-                              Option {optionIndex + 1}:
-                            </span>{" "}
-                            {option}
-                          </button>
-                        );
-                      })}
+                              <span className="font-medium">
+                                Option {optionIndex + 1}:
+                              </span>{" "}
+                              {option}
+                            </button>
+                          );
+                        },
+                      )}
                     </div>
                   </div>
                 </div>
@@ -320,8 +395,8 @@ const Exams = () => {
                 {isTakeExamPending
                   ? "Confirm in Wallet..."
                   : isTakeExamConfirming
-                  ? "Submitting..."
-                  : "Submit Answers"}
+                    ? "Submitting..."
+                    : "Submit Answers"}
               </button>
             )}
           </div>
