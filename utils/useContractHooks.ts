@@ -541,6 +541,7 @@ export function useGetExamReviewForStudent(examId: bigint | undefined) {
     abi: PROOF_BASE_ABI,
     functionName: "getExamReviewForStudent",
     args: examId !== undefined ? [examId] : undefined,
+    account: address,
     query: {
       enabled: examId !== undefined && !!address,
     },
@@ -607,8 +608,9 @@ export function useGetExamsWithStatusForStudent(
     abi: PROOF_BASE_ABI,
     functionName: "getExamsWithStatusForStudent",
     args: studentAddress ? [studentAddress] : undefined,
+    account: studentAddress,
     query: {
-      enabled,
+      enabled: enabled && !!studentAddress,
     },
   });
 
