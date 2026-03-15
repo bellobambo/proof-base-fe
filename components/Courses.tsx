@@ -7,9 +7,12 @@ import { AnimatePresence, motion } from "framer-motion";
 import {
   useCreateCourse,
   useCreateExam,
+  useEnrollInCourse,
   useGetAllCourses,
   useGetUser,
+  useIsEnrolledInCourse,
   UserRole,
+  type Course,
   type QuestionOptions,
 } from "@/utils/useContractHooks";
 import Link from "next/link";
@@ -28,9 +31,108 @@ const emptyQuestion = (): ExamQuestionForm => ({
   correctAnswer: 0,
 });
 
+type CourseCardProps = {
+  course: Course;
+  address?: `0x${string}`;
+  isTutor: boolean;
+  isStudent: boolean;
+  canManageExam: boolean;
+  openExamDrawer: (courseId: bigint, courseTitle: string) => void;
+};
+
+function CourseCard({
+  course,
+  address,
+  isTutor,
+  isStudent,
+  canManageExam,
+  openExamDrawer,
+}: CourseCardProps) {
+  const { enrollInCourse, isLoading: isEnrolling } = useEnrollInCourse();
+
+  const { data: isEnrolled } = useIsEnrolledInCourse(
+    course.courseId,
+    isStudent ? address : undefined,
+  );
+
+  const enrolled = Boolean(isEnrolled);
+
+  const handleEnroll = () => {
+    if (!isStudent || enrolled || !course.isActive || isEnrolling) return;
+    enrollInCourse(course.courseId);
+  };
+
+  return (
+    <div className="w-[300px] rounded-2xl bg-[#E36A6A] p-5 shadow-md transition hover:-translate-y-1 hover:shadow-xl">
+      <div className="flex min-h-[210px] flex-col justify-between">
+        <div>
+          <h3 className="line-clamp-2 text-lg font-semibold text-[#FFFBF1]">
+            {course.title}
+          </h3>
+
+          <p className="mt-3 text-sm text-[#FFFBF1]/85">
+            Lecturer: {course.tutorName}
+          </p>
+        </div>
+
+        <div className="mt-6 space-y-3 border-t border-white/15 pt-4">
+          <div className="flex items-center justify-between">
+            <span className="text-xs text-[#FFFBF1]/75">
+              ID: {course.courseId.toString()}
+            </span>
+
+            <span
+              className={`rounded-full px-2.5 py-1 text-[11px] font-medium ${
+                course.isActive
+                  ? "bg-white/15 text-[#FFFBF1]"
+                  : "bg-black/10 text-[#FFFBF1]/80"
+              }`}
+            >
+              {course.isActive ? "Active" : "Inactive"}
+            </span>
+          </div>
+
+          {canManageExam && (
+            <button
+              onClick={() => openExamDrawer(course.courseId, course.title)}
+              className="w-full cursor-pointer rounded-xl bg-[#FFFBF1] px-4 py-2.5 text-sm font-semibold text-[#E36A6A] transition hover:opacity-90"
+            >
+              + Add Exam
+            </button>
+          )}
+
+          {isStudent && (
+            <button
+              onClick={handleEnroll}
+              disabled={!course.isActive || enrolled || isEnrolling}
+              className={`w-full rounded-xl px-4 py-2.5 text-sm font-semibold transition ${
+                enrolled
+                  ? "cursor-not-allowed bg-white/20 text-[#FFFBF1]"
+                  : !course.isActive || isEnrolling
+                    ? "cursor-not-allowed bg-white/10 text-[#FFFBF1]/70"
+                    : "cursor-pointer bg-[#FFFBF1] text-[#E36A6A] hover:opacity-90"
+              }`}
+            >
+              {enrolled
+                ? "Enrolled"
+                : isEnrolling
+                  ? "Enrolling..."
+                  : !course.isActive
+                    ? "Course Inactive"
+                    : "Enroll"}
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function Courses() {
   const { address } = useAccount();
   const { data: user } = useGetUser(address);
+    console.log("User data:", user);
+
 
   const {
     createCourse,
@@ -69,6 +171,7 @@ export default function Courses() {
   const aiFileInputRef = useRef<HTMLInputElement | null>(null);
 
   const isTutor = user?.role === UserRole.TUTOR;
+  const isStudent = user?.role === UserRole.STUDENT;
   const isCreatingCourse = isCoursePending || isCourseConfirming;
   const isCreatingExam = isExamPending || isExamConfirming || isProcessingFile;
 
@@ -350,51 +453,15 @@ export default function Courses() {
                 isTutor && ownCourseIds.has(course.courseId.toString());
 
               return (
-                <div
+                <CourseCard
                   key={course.courseId.toString()}
-                  className="w-[300px] rounded-2xl bg-[#E36A6A] p-5 shadow-md transition hover:-translate-y-1 hover:shadow-xl"
-                >
-                  <div className="flex min-h-[210px] flex-col justify-between">
-                    <div>
-                      <h3 className="line-clamp-2 text-lg font-semibold text-[#FFFBF1]">
-                        {course.title}
-                      </h3>
-
-                      <p className="mt-3 text-sm text-[#FFFBF1]/85">
-                        Lecturer: {course.tutorName}
-                      </p>
-                    </div>
-
-                    <div className="mt-6 space-y-3 border-t border-white/15 pt-4">
-                      <div className="flex items-center justify-between">
-                        <span className="text-xs text-[#FFFBF1]/75">
-                          ID: {course.courseId.toString()}
-                        </span>
-
-                        <span
-                          className={`rounded-full px-2.5 py-1 text-[11px] font-medium ${
-                            course.isActive
-                              ? "bg-white/15 text-[#FFFBF1]"
-                              : "bg-black/10 text-[#FFFBF1]/80"
-                          }`}
-                        >
-                          {course.isActive ? "Active" : "Inactive"}
-                        </span>
-                      </div>
-
-                      {canManageExam && (
-                        <button
-                          onClick={() =>
-                            openExamDrawer(course.courseId, course.title)
-                          }
-                          className="w-full cursor-pointer rounded-xl bg-[#FFFBF1] px-4 py-2.5 text-sm font-semibold text-[#E36A6A] transition hover:opacity-90"
-                        >
-                          + Add Exam
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                </div>
+                  course={course}
+                  address={address}
+                  isTutor={!!isTutor}
+                  isStudent={!!isStudent}
+                  canManageExam={canManageExam}
+                  openExamDrawer={openExamDrawer}
+                />
               );
             })}
           </div>
