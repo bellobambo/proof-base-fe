@@ -14,7 +14,7 @@ import {
   UserRole,
 } from "@/utils/useContractHooks";
 
-type DrawerMode = "answer" | "review" | "score";
+type DrawerMode = "answer" | "review";
 
 const Exams = () => {
   const { address } = useAccount();
@@ -28,12 +28,27 @@ const Exams = () => {
   } = useGetAllExams();
 
   const {
-    data: studentExamStatuses,
+    data: studentExamsWithStatus,
     isLoading: isStudentExamsLoading,
     error: studentExamsError,
   } = useGetExamsWithStatusForStudent(address, {
     query: { enabled: !!address && isStudent },
   });
+
+  const examsToRender = useMemo(() => {
+    if (isStudent) {
+      return studentExamsWithStatus ?? [];
+    }
+
+    return (allExams ?? []).map((exam) => ({
+      exam,
+      completionStatus: false,
+      score: BigInt(0),
+    }));
+  }, [isStudent, studentExamsWithStatus, allExams]);
+
+  const isLoading = isStudent ? isStudentExamsLoading : isAllExamsLoading;
+  const error = isStudent ? studentExamsError : allExamsError;
 
   const [openDrawer, setOpenDrawer] = useState(false);
   const [drawerMode, setDrawerMode] = useState<DrawerMode>("answer");
@@ -51,13 +66,11 @@ const Exams = () => {
   );
 
   const {
-    data: examReviewData,
+    data: reviewData,
     isLoading: isReviewLoading,
     error: reviewError,
   } = useGetExamReviewForStudent(
-    drawerMode === "review" || drawerMode === "score"
-      ? selectedExamId ?? undefined
-      : undefined
+    drawerMode === "review" ? selectedExamId ?? undefined : undefined
   );
 
   const {
@@ -67,40 +80,18 @@ const Exams = () => {
     error: takeExamError,
   } = useTakeExam();
 
-  const isLoading = isStudent ? isStudentExamsLoading : isAllExamsLoading;
-  const error = isStudent ? studentExamsError : allExamsError;
-
-  const displayedExams = useMemo(() => {
-    if (isStudent) {
-      return (studentExamStatuses ?? []).map((item) => item.exam);
-    }
-    return allExams ?? [];
-  }, [isStudent, studentExamStatuses, allExams]);
-
-  const selectedExam = useMemo(() => {
-    if (selectedExamId === null) return null;
-    return displayedExams.find((exam) => exam.examId === selectedExamId) ?? null;
-  }, [displayedExams, selectedExamId]);
-
-  const selectedStudentExamStatus = useMemo(() => {
-    if (!isStudent || selectedExamId === null) return null;
-    return (
-      studentExamStatuses.find((item) => item.exam.examId === selectedExamId) ??
-      null
-    );
-  }, [isStudent, studentExamStatuses, selectedExamId]);
-
-  const questionTexts =
-    drawerMode === "answer"
-      ? examQuestionsData?.questionTexts ?? []
-      : examReviewData?.questionTexts ?? [];
-
-  const questionOptions =
-    drawerMode === "answer"
-      ? examQuestionsData?.questionOptions ?? []
-      : examReviewData?.questionOptions ?? [];
+  const questionTexts = examQuestionsData?.questionTexts ?? [];
+  const questionOptions = examQuestionsData?.questionOptions ?? [];
 
   const isSubmitting = isTakeExamPending || isTakeExamConfirming;
+
+  const selectedExamStatus = useMemo(() => {
+    if (selectedExamId === null) return null;
+
+    return (
+      examsToRender.find((item) => item.exam.examId === selectedExamId) ?? null
+    );
+  }, [examsToRender, selectedExamId]);
 
   useEffect(() => {
     if (openDrawer && drawerMode === "answer" && questionTexts.length) {
@@ -123,6 +114,7 @@ const Exams = () => {
 
   const closeExamDrawer = () => {
     if (isSubmitting) return;
+
     setOpenDrawer(false);
     setSelectedExamId(null);
     setSelectedExamTitle("");
@@ -162,21 +154,6 @@ const Exams = () => {
     );
   };
 
-  const drawerHeading = useMemo(() => {
-    if (!isStudent) return "Exam Questions";
-    if (drawerMode === "score") return "Exam Score";
-    if (drawerMode === "review") return "Past Questions";
-    return "Answer Exam";
-  }, [isStudent, drawerMode]);
-
-  const scorePercentage =
-    examReviewData && Number(examReviewData.maxScore) > 0
-      ? Math.round(
-          (Number(examReviewData.totalScore) / Number(examReviewData.maxScore)) *
-            100
-        )
-      : 0;
-
   if (isLoading) {
     return (
       <div className="mx-auto mt-10 max-w-6xl p-6">
@@ -186,6 +163,8 @@ const Exams = () => {
   }
 
   if (error) {
+    console.error("FAILED TO LOAD EXAMS:", error);
+
     return (
       <div className="mx-auto mt-10 max-w-6xl p-6">
         <div className="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-600 ring-1 ring-red-200">
@@ -209,25 +188,19 @@ const Exams = () => {
 
           <div className="flex items-center justify-between">
             <h2 className="text-xl font-semibold text-[#E36A6A]">
-              Exams ({displayedExams?.length ?? 0})
+              Exams ({examsToRender.length})
             </h2>
           </div>
         </div>
 
-        {!displayedExams?.length ? (
+        {!examsToRender.length ? (
           <div className="rounded-2xl border border-gray-200 bg-[#FFFBF1] p-8 text-center shadow-sm">
             <p className="text-sm text-gray-500">No exams available yet.</p>
           </div>
         ) : (
           <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 xl:grid-cols-3">
-            {displayedExams.map((exam) => {
-              const studentStatus = isStudent
-                ? studentExamStatuses.find(
-                    (item) => item.exam.examId === exam.examId
-                  )
-                : null;
-
-              const hasCompleted = !!studentStatus?.completionStatus;
+            {examsToRender.map(({ exam, completionStatus, score }) => {
+              const hasTakenExam = isStudent && completionStatus;
 
               return (
                 <div
@@ -245,10 +218,9 @@ const Exams = () => {
                         <p>Course ID: {exam.courseId.toString()}</p>
                         <p>Questions: {exam.questionCount.toString()}</p>
 
-                        {isStudent && hasCompleted && (
-                          <p className="font-medium text-green-700">
-                            Score: {studentStatus?.score.toString()}/
-                            {exam.questionCount.toString()}
+                        {isStudent && hasTakenExam && (
+                          <p className="font-semibold text-green-700">
+                            Score: {score.toString()} / {exam.questionCount.toString()}
                           </p>
                         )}
                       </div>
@@ -257,11 +229,10 @@ const Exams = () => {
                     <div className="mt-5 space-y-3 border-t border-gray-200 pt-4">
                       <div className="flex items-center justify-between">
                         <span
-                          className={`rounded-full px-2.5 py-1 text-[11px] font-medium ${
-                            exam.isActive
-                              ? "bg-green-50 text-green-700 ring-1 ring-green-200"
-                              : "bg-gray-100 text-gray-600 ring-1 ring-gray-200"
-                          }`}
+                          className={`rounded-full px-2.5 py-1 text-[11px] font-medium ${exam.isActive
+                            ? "bg-green-50 text-green-700 ring-1 ring-green-200"
+                            : "bg-gray-100 text-gray-600 ring-1 ring-gray-200"
+                            }`}
                         >
                           {exam.isActive ? "Active" : "Inactive"}
                         </span>
@@ -272,41 +243,7 @@ const Exams = () => {
                         </span>
                       </div>
 
-                      {isStudent ? (
-                        hasCompleted ? (
-                          <div className="grid grid-cols-2 gap-3">
-                            <button
-                              type="button"
-                              onClick={() =>
-                                openExamDrawer(exam.examId, exam.title, "review")
-                              }
-                              className="w-full cursor-pointer rounded-xl border border-[#E36A6A] bg-white px-4 py-2.5 text-sm font-semibold text-[#E36A6A] transition hover:bg-[#FFF1F1]"
-                            >
-                              Past Questions
-                            </button>
-
-                            <button
-                              type="button"
-                              onClick={() =>
-                                openExamDrawer(exam.examId, exam.title, "score")
-                              }
-                              className="w-full cursor-pointer rounded-xl bg-[#E36A6A] px-4 py-2.5 text-sm font-semibold text-white transition hover:opacity-90"
-                            >
-                              View Score
-                            </button>
-                          </div>
-                        ) : (
-                          <button
-                            type="button"
-                            onClick={() =>
-                              openExamDrawer(exam.examId, exam.title, "answer")
-                            }
-                            className="block w-full cursor-pointer rounded-xl bg-[#E36A6A] px-4 py-2.5 text-center text-sm font-semibold text-white transition hover:opacity-90"
-                          >
-                            Answer Questions
-                          </button>
-                        )
-                      ) : (
+                      {!isStudent ? (
                         <button
                           type="button"
                           onClick={() =>
@@ -315,6 +252,30 @@ const Exams = () => {
                           className="block w-full cursor-pointer rounded-xl bg-[#E36A6A] px-4 py-2.5 text-center text-sm font-semibold text-white transition hover:opacity-90"
                         >
                           View Questions
+                        </button>
+                      ) : hasTakenExam ? (
+                        <div className="mt-2 flex items-center gap-2">
+                          <div className="flex-1 rounded-xl bg-green-50 px-4 py-2.5 text-center text-sm font-medium text-green-700 ring-1 ring-green-200">
+                            Exam completed
+                          </div>
+
+                          <button
+                            type="button"
+                            onClick={() => openExamDrawer(exam.examId, exam.title, "review")}
+                            className="shrink-0 cursor-pointer rounded-xl bg-[#E36A6A] px-4 py-2.5 text-center text-sm font-semibold text-white transition hover:opacity-90"
+                          >
+                            View Past Questions
+                          </button>
+                        </div>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            openExamDrawer(exam.examId, exam.title, "answer")
+                          }
+                          className="block w-full cursor-pointer rounded-xl bg-[#E36A6A] px-4 py-2.5 text-center text-sm font-semibold text-white transition hover:opacity-90"
+                        >
+                          Answer Questions
                         </button>
                       )}
                     </div>
@@ -330,7 +291,11 @@ const Exams = () => {
         title={
           <div>
             <h2 className="text-xl font-semibold text-gray-900">
-              {drawerHeading}
+              {drawerMode === "review"
+                ? isStudent
+                  ? "Past Questions"
+                  : "Exam Questions"
+                : "Answer Exam"}
             </h2>
             <p className="mt-1 text-sm font-normal text-gray-500">
               {selectedExamTitle || "Selected Exam"}
@@ -357,82 +322,26 @@ const Exams = () => {
         }}
       >
         <div className="space-y-6">
-          {selectedExam && (
+          {selectedExamStatus && (
             <div className="rounded-2xl border border-gray-200 bg-white p-4">
               <div className="flex flex-wrap items-center gap-3 text-sm text-gray-700">
-                <span>Exam ID: {selectedExam.examId.toString()}</span>
-                <span>Course ID: {selectedExam.courseId.toString()}</span>
-                <span>Questions: {selectedExam.questionCount.toString()}</span>
+                <span>Exam ID: {selectedExamStatus.exam.examId.toString()}</span>
+                <span>Course ID: {selectedExamStatus.exam.courseId.toString()}</span>
+                <span>
+                  Questions: {selectedExamStatus.exam.questionCount.toString()}
+                </span>
+
+                {isStudent && selectedExamStatus.completionStatus && (
+                  <span className="font-semibold text-green-700">
+                    Score: {selectedExamStatus.score.toString()} /{" "}
+                    {selectedExamStatus.exam.questionCount.toString()}
+                  </span>
+                )}
               </div>
             </div>
           )}
 
-          {drawerMode === "score" ? (
-            isReviewLoading ? (
-              <p className="text-sm text-gray-500">Loading score...</p>
-            ) : reviewError ? (
-              <div className="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-600 ring-1 ring-red-200">
-                Failed to load score.
-              </div>
-            ) : !examReviewData ? (
-              <div className="rounded-xl border border-gray-200 bg-white px-4 py-6 text-sm text-gray-500">
-                No score found for this exam yet.
-              </div>
-            ) : (
-              <div className="rounded-2xl border border-gray-200 bg-white p-6">
-                <div className="space-y-4">
-                  <h3 className="text-lg font-semibold text-[#E36A6A]">
-                    Score Summary
-                  </h3>
-
-                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-                    <div className="rounded-xl bg-[#FFFBF1] p-4 ring-1 ring-black/5">
-                      <p className="text-xs uppercase tracking-wide text-gray-500">
-                        Score
-                      </p>
-                      <p className="mt-2 text-2xl font-bold text-[#E36A6A]">
-                        {examReviewData.totalScore.toString()}
-                      </p>
-                    </div>
-
-                    <div className="rounded-xl bg-[#FFFBF1] p-4 ring-1 ring-black/5">
-                      <p className="text-xs uppercase tracking-wide text-gray-500">
-                        Total Questions
-                      </p>
-                      <p className="mt-2 text-2xl font-bold text-[#E36A6A]">
-                        {examReviewData.maxScore.toString()}
-                      </p>
-                    </div>
-
-                    <div className="rounded-xl bg-[#FFFBF1] p-4 ring-1 ring-black/5">
-                      <p className="text-xs uppercase tracking-wide text-gray-500">
-                        Percentage
-                      </p>
-                      <p className="mt-2 text-2xl font-bold text-[#E36A6A]">
-                        {scorePercentage}%
-                      </p>
-                    </div>
-                  </div>
-
-                  {isStudent && selectedStudentExamStatus?.completionStatus && (
-                    <button
-                      type="button"
-                      onClick={() =>
-                        openExamDrawer(
-                          selectedStudentExamStatus.exam.examId,
-                          selectedStudentExamStatus.exam.title,
-                          "review"
-                        )
-                      }
-                      className="rounded-xl border border-[#E36A6A] bg-white px-4 py-2.5 text-sm font-semibold text-[#E36A6A] transition hover:bg-[#FFF1F1]"
-                    >
-                      View Past Questions
-                    </button>
-                  )}
-                </div>
-              </div>
-            )
-          ) : drawerMode === "answer" ? (
+          {drawerMode === "answer" ? (
             isQuestionsLoading ? (
               <p className="text-sm text-gray-500">Loading questions...</p>
             ) : questionsError ? (
@@ -458,33 +367,30 @@ const Exams = () => {
                       <p className="text-sm text-gray-800">{question}</p>
 
                       <div className="space-y-2">
-                        {questionOptions[questionIndex]?.map(
-                          (option, optionIndex) => {
-                            const isSelected =
-                              selectedAnswers[questionIndex] === optionIndex;
+                        {questionOptions[questionIndex]?.map((option, optionIndex) => {
+                          const isSelected =
+                            selectedAnswers[questionIndex] === optionIndex;
 
-                            return (
-                              <button
-                                key={optionIndex}
-                                type="button"
-                                onClick={() =>
-                                  handleSelectAnswer(questionIndex, optionIndex)
-                                }
-                                disabled={!isStudent || isSubmitting}
-                                className={`w-full rounded-xl border px-4 py-3 text-left text-sm transition ${
-                                  isSelected
-                                    ? "border-[#E36A6A] bg-[#FFF1F1] text-[#E36A6A]"
-                                    : "border-gray-200 bg-[#FFFBF1] text-gray-800 hover:border-[#E36A6A]"
-                                } ${(!isStudent || isSubmitting) ? "opacity-90" : ""}`}
-                              >
-                                <span className="font-medium">
-                                  Option {optionIndex + 1}:
-                                </span>{" "}
-                                {option}
-                              </button>
-                            );
-                          }
-                        )}
+                          return (
+                            <button
+                              key={optionIndex}
+                              type="button"
+                              onClick={() =>
+                                handleSelectAnswer(questionIndex, optionIndex)
+                              }
+                              disabled={!isStudent || isSubmitting}
+                              className={`w-full rounded-xl border px-4 py-3 text-left text-sm transition ${isSelected
+                                ? "border-[#E36A6A] bg-[#FFF1F1] text-[#E36A6A]"
+                                : "border-gray-200 bg-[#FFFBF1] text-gray-800 hover:border-[#E36A6A]"
+                                } ${isSubmitting ? "opacity-90" : ""}`}
+                            >
+                              <span className="font-medium">
+                                Option {optionIndex + 1}:
+                              </span>{" "}
+                              {option}
+                            </button>
+                          );
+                        })}
                       </div>
                     </div>
                   </div>
@@ -495,97 +401,93 @@ const Exams = () => {
             <p className="text-sm text-gray-500">Loading past questions...</p>
           ) : reviewError ? (
             <div className="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-600 ring-1 ring-red-200">
-              Failed to load exam review.
+              Failed to load past questions.
             </div>
-          ) : !examReviewData?.questionTexts?.length ? (
+          ) : !reviewData?.questionTexts?.length ? (
             <div className="rounded-xl border border-gray-200 bg-white px-4 py-6 text-sm text-gray-500">
-              No past questions found for this exam.
+              No review data found for this exam.
             </div>
           ) : (
             <div className="space-y-4">
-              {examReviewData.questionTexts.map((question, questionIndex) => (
-                <div
-                  key={questionIndex}
-                  className="rounded-2xl border border-gray-200 bg-white p-4"
-                >
-                  <div className="space-y-4">
-                    <div className="flex flex-wrap items-center justify-between gap-3">
-                      <h3 className="text-base font-semibold text-[#E36A6A]">
-                        Question {questionIndex + 1}
-                      </h3>
+              {reviewData.questionTexts.map((question, questionIndex) => {
+                const studentAnswerIndex = Number(
+                  reviewData.studentAnswers[questionIndex] ?? BigInt(-1)
+                );
 
-                      <span
-                        className={`rounded-full px-3 py-1 text-xs font-semibold ${
-                          examReviewData.isCorrect[questionIndex]
+                const correctAnswerIndex = Number(
+                  reviewData.correctAnswers[questionIndex] ?? BigInt(-1)
+                );
+                const isCorrect = reviewData.isCorrect[questionIndex];
+
+                return (
+                  <div
+                    key={questionIndex}
+                    className="rounded-2xl border border-gray-200 bg-white p-4"
+                  >
+                    <div className="space-y-4">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <h3 className="text-base font-semibold text-[#E36A6A]">
+                          Question {questionIndex + 1}
+                        </h3>
+
+                        <span
+                          className={`rounded-full px-3 py-1 text-xs font-semibold ${isCorrect
                             ? "bg-green-50 text-green-700 ring-1 ring-green-200"
                             : "bg-red-50 text-red-700 ring-1 ring-red-200"
-                        }`}
-                      >
-                        {examReviewData.isCorrect[questionIndex]
-                          ? "Correct"
-                          : "Wrong"}
-                      </span>
-                    </div>
+                            }`}
+                        >
+                          {isCorrect ? "Correct" : "Wrong"}
+                        </span>
+                      </div>
 
-                    <p className="text-sm text-gray-800">{question}</p>
+                      <p className="text-sm text-gray-800">{question}</p>
 
-                    <div className="space-y-2">
-                      {examReviewData.questionOptions[questionIndex]?.map(
-                        (option, optionIndex) => {
-                          const correctIndex = Number(
-                            examReviewData.correctAnswers[questionIndex]
-                          );
-                          const studentIndex = Number(
-                            examReviewData.studentAnswers[questionIndex]
-                          );
+                      <div className="space-y-2">
+                        {reviewData.questionOptions[questionIndex]?.map(
+                          (option, optionIndex) => {
+                            const isStudentChoice =
+                              studentAnswerIndex === optionIndex;
+                            const isCorrectChoice =
+                              correctAnswerIndex === optionIndex;
 
-                          const isCorrectOption = optionIndex === correctIndex;
-                          const isStudentOption = optionIndex === studentIndex;
-
-                          let optionClass =
-                            "border-gray-200 bg-[#FFFBF1] text-gray-800";
-
-                          if (isCorrectOption) {
-                            optionClass =
-                              "border-green-300 bg-green-50 text-green-700";
-                          } else if (isStudentOption && !isCorrectOption) {
-                            optionClass = "border-red-300 bg-red-50 text-red-700";
-                          }
-
-                          return (
-                            <div
-                              key={optionIndex}
-                              className={`w-full rounded-xl border px-4 py-3 text-left text-sm ${optionClass}`}
-                            >
-                              <div className="flex items-center justify-between gap-3">
-                                <span>
+                            return (
+                              <div
+                                key={optionIndex}
+                                className={`w-full rounded-xl border px-4 py-3 text-left text-sm ${isCorrectChoice
+                                  ? "border-green-300 bg-green-50 text-green-800"
+                                  : isStudentChoice && !isCorrectChoice
+                                    ? "border-red-300 bg-red-50 text-red-800"
+                                    : "border-gray-200 bg-[#FFFBF1] text-gray-800"
+                                  }`}
+                              >
+                                <div>
                                   <span className="font-medium">
                                     Option {optionIndex + 1}:
                                   </span>{" "}
                                   {option}
-                                </span>
+                                </div>
 
-                                <div className="flex shrink-0 gap-2">
-                                  {isStudentOption && (
-                                    <span className="rounded-full bg-black/5 px-2 py-1 text-[11px] font-medium text-gray-700">
-                                      Your Answer
+                                <div className="mt-1 flex flex-wrap gap-2 text-xs font-medium">
+                                  {isStudentChoice && (
+                                    <span className="rounded-full bg-black/5 px-2 py-1 text-gray-700">
+                                      Your answer
                                     </span>
                                   )}
-                                  {isCorrectOption && (
-                                    <span className="rounded-full bg-green-100 px-2 py-1 text-[11px] font-medium text-green-700">
-                                      Correct Answer
+                                  {isCorrectChoice && (
+                                    <span className="rounded-full bg-green-100 px-2 py-1 text-green-700">
+                                      Correct answer
                                     </span>
                                   )}
                                 </div>
                               </div>
-                            </div>
-                          );
-                        }
-                      )}
+                            );
+                          }
+                        )}
+                      </div>
                     </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
 
@@ -599,24 +501,27 @@ const Exams = () => {
             <button
               onClick={closeExamDrawer}
               disabled={isSubmitting}
-              className="cursor-pointer rounded-xl bg-white px-4 py-2.5 text-sm font-medium text-gray-700 ring-1 ring-black/10 disabled:opacity-50"
+              className="rounded-xl cursor-pointer bg-white px-4 py-2.5 text-sm font-medium text-gray-700 ring-1 ring-black/10 disabled:opacity-50"
             >
               Close
             </button>
 
-            {isStudent && drawerMode === "answer" && questionTexts.length > 0 && (
-              <button
-                onClick={handleSubmitExam}
-                disabled={isSubmitting}
-                className="rounded-xl bg-[#E36A6A] px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:opacity-90 disabled:opacity-50"
-              >
-                {isTakeExamPending
-                  ? "Confirm in Wallet..."
-                  : isTakeExamConfirming
-                  ? "Submitting..."
-                  : "Submit Answers"}
-              </button>
-            )}
+            {isStudent &&
+              drawerMode === "answer" &&
+              questionTexts.length > 0 &&
+              !selectedExamStatus?.completionStatus && (
+                <button
+                  onClick={handleSubmitExam}
+                  disabled={isSubmitting}
+                  className="rounded-xl bg-[#E36A6A] px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:opacity-90 disabled:opacity-50"
+                >
+                  {isTakeExamPending
+                    ? "Confirm in Wallet..."
+                    : isTakeExamConfirming
+                      ? "Submitting..."
+                      : "Submit Answers"}
+                </button>
+              )}
           </div>
         </div>
       </Drawer>
