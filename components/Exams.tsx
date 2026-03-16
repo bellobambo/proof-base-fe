@@ -569,7 +569,7 @@ const Exams = () => {
                 <button
                   onClick={handleSubmitExam}
                   disabled={isSubmitting}
-                  className="rounded-xl bg-[#E36A6A] px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:opacity-90 disabled:opacity-50"
+                  className="rounded-xl cursor-pointer bg-[#E36A6A] px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:opacity-90 disabled:opacity-50"
                 >
                   {isTakeExamPending
                     ? "Confirm in Wallet..."

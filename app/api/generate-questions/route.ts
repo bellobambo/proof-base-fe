@@ -126,18 +126,44 @@ function normalizeExamShape(payload: any): ParsedExam {
   };
 }
 
+function deriveTitleFromFilename(fileName: string) {
+  const base = fileName
+    .replace(/\.[^/.]+$/, "")
+    .replace(/[_-]+/g, " ")
+    .trim();
+
+  if (!base) return "Exam";
+
+  return base
+    .split(" ")
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(" ");
+}
+
 export async function POST(req: Request) {
   try {
     const formData = await req.formData();
 
-    const file = formData.get("file");
+    const fileEntry = formData.get("file");
     const mode = formData.get("mode");
     const examTitle = String(formData.get("examTitle") ?? "").trim();
 
-    if (!(file instanceof File)) {
+    const questionCount = Number(formData.get("questionCount") ?? 10);
+    const scope = String(formData.get("scope") ?? "").trim();
+    const instructions = String(formData.get("instructions") ?? "").trim();
+
+    const safeQuestionCount = Number.isFinite(questionCount)
+      ? Math.min(50, Math.max(1, questionCount))
+      : 10;
+
+    if (!(fileEntry instanceof File)) {
       console.warn("[exam-doc] request rejected: no file uploaded");
       return NextResponse.json({ error: "No file uploaded." }, { status: 400 });
     }
+
+    const file = fileEntry;
+    const filenameTitle = deriveTitleFromFilename(file.name);
+    const titleHint = examTitle || filenameTitle || "Exam";
 
     if (mode !== "normalize" && mode !== "generate") {
       console.warn("[exam-doc] request rejected: invalid mode", { mode });
@@ -185,8 +211,9 @@ Rules:
 - correctAnswer must be the zero-based index of the correct option.
 - If the file already contains answers, map them correctly.
 - If the file contains questions and answers but not exactly 4 options, rewrite into 4-option MCQ form while preserving meaning.
-- Use this title if provided: "${examTitle || "Uploaded Exam"}"
-- If the document includes a better exam title, you may use it.
+- If the lecturer provided a title, use it: "${examTitle || ""}"
+- Otherwise derive a meaningful title from the document content.
+- If nothing is obvious, use this fallback title: "${filenameTitle}"
 `
         : `
 You will create a multiple-choice exam from lecture notes/slides.
@@ -198,8 +225,16 @@ Rules:
 - correctAnswer must be the zero-based index of the correct option.
 - Avoid duplicate questions.
 - Prefer direct knowledge checks, definitions, concepts, and applied understanding.
-- Use this title if provided: "${examTitle || "AI Generated Exam"}"
-- Generate between 5 and 15 questions depending on the material depth.
+
+Title rules:
+- If the lecturer provided a title, use it: "${examTitle || ""}"
+- Otherwise derive a meaningful exam title from the lecture topic.
+- If the document clearly indicates a topic, use that as the title.
+- If nothing is obvious, use this fallback title: "${filenameTitle}"
+
+- Generate exactly ${safeQuestionCount} questions.
+- Restrict generation to this requested scope if possible: "${scope || "Use the most relevant content available."}"
+- Follow these instructor instructions if supported: "${instructions || "No extra instructions."}"
 `;
 
     const response = await client.responses.create({
@@ -241,6 +276,10 @@ Rules:
 
     const parsed = JSON.parse(raw);
     const normalized = normalizeExamShape(parsed);
+
+    if (!normalized.title || normalized.title.toLowerCase() === "exam") {
+      normalized.title = titleHint;
+    }
 
     console.log("[exam-doc] request completed successfully", {
       title: normalized.title,

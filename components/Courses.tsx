@@ -197,6 +197,10 @@ export default function Courses() {
   const [inputMode, setInputMode] = useState<ExamInputMode>("manual");
   const [isProcessingFile, setIsProcessingFile] = useState(false);
 
+  const [questionCount, setQuestionCount] = useState("10");
+  const [aiScope, setAiScope] = useState("");
+  const [aiInstructions, setAiInstructions] = useState("");
+
   const importFileInputRef = useRef<HTMLInputElement | null>(null);
   const aiFileInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -251,6 +255,9 @@ export default function Courses() {
     setUploadError("");
     setInputMode("manual");
     setIsProcessingFile(false);
+    setQuestionCount("10");
+    setAiScope("");
+    setAiInstructions("");
 
     if (importFileInputRef.current) {
       importFileInputRef.current.value = "";
@@ -325,6 +332,9 @@ export default function Courses() {
       formData.append("file", file);
       formData.append("mode", mode);
       formData.append("examTitle", examTitle.trim());
+      formData.append("questionCount", questionCount);
+      formData.append("scope", aiScope.trim());
+      formData.append("instructions", aiInstructions.trim());
 
       const res = await fetch("/api/generate-questions", {
         method: "POST",
@@ -698,16 +708,62 @@ export default function Courses() {
                 />
               </div>
             )}
-
             {inputMode === "ai" && (
               <div className="mt-4 rounded-xl bg-[#FFFBF1] p-4 ring-1 ring-black/10">
                 <h4 className="text-sm font-semibold text-gray-900">
-                  Upload Lecture Note / Slide for AI Generation
+                  Upload Notes for AI Question Generation
                 </h4>
                 <p className="mt-1 text-xs text-gray-500">
-                  Best with .docx, but .txt and .md also work. AI will generate
-                  MCQs with 4 options and the correct answer index.
+                  Best with .docx, but .txt and .md also work. Add instructions
+                  so the AI does not generate random questions from random parts
+                  of the note.
                 </p>
+
+                <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
+                  <div className="space-y-2">
+                    <label className="block text-sm font-medium text-gray-700">
+                      Number of Questions
+                    </label>
+                    <input
+                      type="number"
+                      min={1}
+                      max={50}
+                      value={questionCount}
+                      onChange={(e) => setQuestionCount(e.target.value)}
+                      disabled={isCreatingExam}
+                      className="w-full rounded-xl bg-white px-4 py-3 text-sm text-gray-800 outline-none ring-1 ring-black/10 focus:ring-2 focus:ring-black/20 disabled:opacity-60"
+                      placeholder="e.g. 10"
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className="block text-sm font-medium text-gray-700">
+                      Scope / Page Range Hint
+                    </label>
+                    <input
+                      type="text"
+                      value={aiScope}
+                      onChange={(e) => setAiScope(e.target.value)}
+                      disabled={isCreatingExam}
+                      placeholder="e.g. pages 1-15 or chapters 1-2"
+                      className="w-full rounded-xl bg-white px-4 py-3 text-sm text-gray-800 outline-none ring-1 ring-black/10 focus:ring-2 focus:ring-black/20 disabled:opacity-60"
+                    />
+                  </div>
+                </div>
+
+                <div className="mt-4 space-y-2">
+                  <label className="block text-sm font-medium text-gray-700">
+                    Extra Instructions
+                  </label>
+                  <textarea
+                    rows={4}
+                    value={aiInstructions}
+                    onChange={(e) => setAiInstructions(e.target.value)}
+                    disabled={isCreatingExam}
+                    placeholder="e.g. Generate calculations based questions."
+                    className="w-full rounded-xl bg-white px-4 py-3 text-sm text-gray-800 outline-none ring-1 ring-black/10 focus:ring-2 focus:ring-black/20 disabled:opacity-60"
+                  />
+                </div>
 
                 <input
                   ref={aiFileInputRef}
@@ -715,7 +771,7 @@ export default function Courses() {
                   accept=".docx,.txt,.md,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain"
                   onChange={handleAiLectureNoteUpload}
                   disabled={isCreatingExam}
-                  className="mt-3 block text-xs text-gray-600"
+                  className="mt-4 block text-xs text-gray-600"
                 />
               </div>
             )}
