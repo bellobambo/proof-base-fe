@@ -8,8 +8,10 @@ import {
   useGetAllExams,
   useGetUser,
   useGetExamQuestions,
+  useGetExamReviewForStudent,
   useTakeExam,
   useIsEnrolledInCourse,
+  useHasCompletedExam,
   UserRole,
 } from "@/utils/useContractHooks";
 
@@ -24,7 +26,11 @@ type ExamCardProps = {
   };
   address?: `0x${string}`;
   isStudent: boolean;
-  openExamDrawer: (examId: bigint, examTitle: string) => void;
+  openExamDrawer: (
+    examId: bigint,
+    examTitle: string,
+    mode?: "answer" | "review",
+  ) => void;
 };
 
 function ExamCard({ exam, address, isStudent, openExamDrawer }: ExamCardProps) {
@@ -33,7 +39,13 @@ function ExamCard({ exam, address, isStudent, openExamDrawer }: ExamCardProps) {
     isStudent ? address : undefined,
   );
 
+  const { data: hasCompleted } = useHasCompletedExam(
+    exam.examId,
+    isStudent ? address : undefined,
+  );
+
   const enrolled = Boolean(isEnrolled);
+  const completed = Boolean(hasCompleted);
   const canTakeExam = !isStudent || enrolled;
 
   return (
@@ -69,31 +81,43 @@ function ExamCard({ exam, address, isStudent, openExamDrawer }: ExamCardProps) {
             </span>
           </div>
 
-          {/* {isStudent && !enrolled && (
-            <p className="text-xs font-medium text-red-500">
-              Enroll in this course to take the exam.
-            </p>
-          )} */}
+          {isStudent && completed ? (
+            <div className="space-y-2">
+              <div className="rounded-xl bg-green-50 px-4 py-2.5 text-center text-sm font-medium text-green-700 ring-1 ring-green-200">
+                Exam completed
+              </div>
 
-          <button
-            type="button"
-            onClick={() => {
-              if (!canTakeExam) return;
-              openExamDrawer(exam.examId, exam.title);
-            }}
-            disabled={!canTakeExam}
-            className={`block w-full rounded-xl px-4 py-2.5 text-center text-sm font-semibold transition ${
-              canTakeExam
-                ? "cursor-pointer bg-[#E36A6A] text-white hover:opacity-90"
-                : "cursor-not-allowed bg-gray-200 text-gray-500"
-            }`}
-          >
-            {isStudent
-              ? enrolled
-                ? "Answer Questions"
-                : "Enroll to Take Exam"
-              : "View Questions"}
-          </button>
+              <button
+                type="button"
+                onClick={() =>
+                  openExamDrawer(exam.examId, exam.title, "review")
+                }
+                className="block w-full cursor-pointer rounded-xl bg-[#E36A6A] px-4 py-2.5 text-center text-sm font-semibold text-white transition hover:opacity-90"
+              >
+                View Past Questions
+              </button>
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={() => {
+                if (!canTakeExam) return;
+                openExamDrawer(exam.examId, exam.title, "answer");
+              }}
+              disabled={!canTakeExam}
+              className={`block w-full rounded-xl px-4 py-2.5 text-center text-sm font-semibold transition ${
+                canTakeExam
+                  ? "cursor-pointer bg-[#E36A6A] text-white hover:opacity-90"
+                  : "cursor-not-allowed bg-gray-200 text-gray-500"
+              }`}
+            >
+              {isStudent
+                ? enrolled
+                  ? "Answer Questions"
+                  : "Enroll to Take Exam"
+                : "View Questions"}
+            </button>
+          )}
         </div>
       </div>
     </div>
@@ -113,6 +137,8 @@ const Exams = () => {
   const [selectedAnswers, setSelectedAnswers] = useState<number[]>([]);
   const [submitError, setSubmitError] = useState("");
 
+  const [drawerMode, setDrawerMode] = useState<"answer" | "review">("answer");
+
   const {
     data: examQuestionsData,
     isLoading: isQuestionsLoading,
@@ -120,15 +146,46 @@ const Exams = () => {
   } = useGetExamQuestions(selectedExamId ?? undefined);
 
   const {
+    data: examReviewData,
+    isLoading: isReviewLoading,
+    error: reviewError,
+  } = useGetExamReviewForStudent(
+    drawerMode === "review" ? (selectedExamId ?? undefined) : undefined,
+  );
+
+  const {
     takeExam,
     isPending: isTakeExamPending,
     isConfirming: isTakeExamConfirming,
+    isConfirmed: isTakeExamConfirmed,
     error: takeExamError,
   } = useTakeExam();
 
-  const questionTexts = examQuestionsData?.questionTexts ?? [];
-  const questionOptions = examQuestionsData?.questionOptions ?? [];
+  useEffect(() => {
+    if (isTakeExamConfirmed) {
+      setSubmitError("");
+      setOpenDrawer(false);
+      setSelectedExamId(null);
+      setSelectedExamTitle("");
+      setDrawerMode("review");
+      setSelectedAnswers([]);
+      window.location.reload();
+    }
+  }, [isTakeExamConfirmed]);
 
+  const questionTexts =
+    drawerMode === "review"
+      ? (examReviewData?.questionTexts ?? [])
+      : (examQuestionsData?.questionTexts ?? []);
+
+  const questionOptions =
+    drawerMode === "review"
+      ? (examReviewData?.questionOptions ?? [])
+      : (examQuestionsData?.questionOptions ?? []);
+
+  const reviewCorrectAnswers = examReviewData?.correctAnswers ?? [];
+  const reviewStudentAnswers = examReviewData?.studentAnswers ?? [];
+  const reviewIsCorrect = examReviewData?.isCorrect ?? [];
   const isSubmitting = isTakeExamPending || isTakeExamConfirming;
 
   const selectedExam = useMemo(() => {
@@ -150,13 +207,18 @@ const Exams = () => {
     }
   }, [openDrawer, questionTexts.length]);
 
-  const openExamDrawer = (examId: bigint, examTitle: string) => {
+  const openExamDrawer = (
+    examId: bigint,
+    examTitle: string,
+    mode: "answer" | "review" = "answer",
+  ) => {
     const exam = exams.find((item) => item.examId === examId);
 
     if (!exam) return;
 
     setSelectedExamId(examId);
     setSelectedExamTitle(examTitle);
+    setDrawerMode(mode);
     setSelectedAnswers([]);
     setSubmitError("");
     setOpenDrawer(true);
@@ -167,12 +229,19 @@ const Exams = () => {
     setOpenDrawer(false);
     setSelectedExamId(null);
     setSelectedExamTitle("");
+    setDrawerMode("answer");
     setSelectedAnswers([]);
     setSubmitError("");
   };
 
   const handleSelectAnswer = (questionIndex: number, optionIndex: number) => {
-    if (!isStudent || !canTakeSelectedExam || isSubmitting) return;
+    if (
+      drawerMode !== "answer" ||
+      !isStudent ||
+      !canTakeSelectedExam ||
+      isSubmitting
+    )
+      return;
 
     setSelectedAnswers((prev) => {
       const next = [...prev];
@@ -203,7 +272,7 @@ const Exams = () => {
     setSubmitError("");
     takeExam(
       selectedExamId,
-      selectedAnswers.map((answer) => BigInt(answer))
+      selectedAnswers.map((answer) => BigInt(answer)),
     );
   };
 
@@ -249,7 +318,7 @@ const Exams = () => {
             <p className="text-sm text-gray-500">No exams available yet.</p>
           </div>
         ) : (
-                <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 xl:grid-cols-3">
+          <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 xl:grid-cols-3">
             {exams.map((exam) => (
               <ExamCard
                 key={exam.examId.toString()}
@@ -267,7 +336,11 @@ const Exams = () => {
         title={
           <div>
             <h2 className="text-xl font-semibold text-gray-900">
-              {isStudent ? "Answer Exam" : "Exam Questions"}
+              {isStudent
+                ? drawerMode === "review"
+                  ? "Exam Review"
+                  : "Answer Exam"
+                : "Exam Questions"}
             </h2>
             <p className="mt-1 text-sm font-normal text-gray-500">
               {selectedExamTitle || "Selected Exam"}
@@ -300,19 +373,34 @@ const Exams = () => {
                 <span>Exam ID: {selectedExam.examId.toString()}</span>
                 <span>Course ID: {selectedExam.courseId.toString()}</span>
                 <span>Questions: {selectedExam.questionCount.toString()}</span>
+
+                {drawerMode === "review" && examReviewData && (
+                  <span className="rounded-full bg-green-50 px-3 py-1 text-xs font-semibold text-green-700 ring-1 ring-green-200">
+                    Score: {examReviewData.totalScore.toString()}/
+                    {examReviewData.maxScore.toString()}
+                  </span>
+                )}
               </div>
             </div>
           )}
 
-          {isQuestionsLoading ? (
-            <p className="text-sm text-gray-500">Loading questions...</p>
-          ) : questionsError ? (
+          {(drawerMode === "review" ? isReviewLoading : isQuestionsLoading) ? (
+            <p className="text-sm text-gray-500">
+              {drawerMode === "review"
+                ? "Loading exam review..."
+                : "Loading questions..."}
+            </p>
+          ) : (drawerMode === "review" ? reviewError : questionsError) ? (
             <div className="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-600 ring-1 ring-red-200">
-              Failed to load exam questions.
+              {drawerMode === "review"
+                ? "Failed to load exam review."
+                : "Failed to load exam questions."}
             </div>
           ) : !questionTexts.length ? (
             <div className="rounded-xl border border-gray-200 bg-white px-4 py-6 text-sm text-gray-500">
-              No questions found for this exam.
+              {drawerMode === "review"
+                ? "No review data found for this exam."
+                : "No questions found for this exam."}
             </div>
           ) : (
             <div className="space-y-4">
@@ -331,40 +419,129 @@ const Exams = () => {
                     <div className="space-y-2">
                       {questionOptions[questionIndex]?.map(
                         (option, optionIndex) => {
+                          const isAnswerMode = drawerMode === "answer";
                           const isSelected =
                             selectedAnswers[questionIndex] === optionIndex;
 
+                          const correctAnswerIndex = Number(
+                            reviewCorrectAnswers[questionIndex] ?? -1,
+                          );
+                          const studentAnswerIndex = Number(
+                            reviewStudentAnswers[questionIndex] ?? -1,
+                          );
+
+                          const isCorrectOption =
+                            drawerMode === "review" &&
+                            optionIndex === correctAnswerIndex;
+
+                          const isStudentOption =
+                            drawerMode === "review" &&
+                            optionIndex === studentAnswerIndex;
+
+                          const studentGotThisQuestionCorrect = Boolean(
+                            reviewIsCorrect[questionIndex],
+                          );
+
                           return (
-                                                    <button
-                            key={optionIndex}
-                            type="button"
-                            onClick={() =>
-                              handleSelectAnswer(questionIndex, optionIndex)
-                            }
-                            disabled={
-                              !isStudent || !canTakeSelectedExam || isSubmitting
-                            }
-                            className={`w-full rounded-xl border px-4 py-3 text-left text-sm transition ${
-                              isStudent && canTakeSelectedExam
-                                ? isSelected
-                                  ? "border-[#E36A6A] bg-[#FFF1F1] text-[#E36A6A]"
-                                  : "border-gray-200 bg-[#FFFBF1] text-gray-800 hover:border-[#E36A6A]"
-                                : "cursor-not-allowed border-gray-200 bg-[#F5F5F5] text-gray-500"
-                            } ${
-                              !isStudent || !canTakeSelectedExam || isSubmitting
-                                ? "opacity-90"
-                                : ""
-                            }`}
-                          >
-                              <span className="font-medium">
-                                Option {optionIndex + 1}:
-                              </span>{" "}
-                              {option}
+                            <button
+                              key={optionIndex}
+                              type="button"
+                              onClick={() =>
+                                handleSelectAnswer(questionIndex, optionIndex)
+                              }
+                              disabled={
+                                drawerMode === "review" ||
+                                !isStudent ||
+                                !canTakeSelectedExam ||
+                                isSubmitting
+                              }
+                              className={`w-full rounded-xl border px-4 py-3 text-left text-sm transition ${
+                                isAnswerMode
+                                  ? isStudent && canTakeSelectedExam
+                                    ? isSelected
+                                      ? "border-[#E36A6A] bg-[#FFF1F1] text-[#E36A6A]"
+                                      : "border-gray-200 bg-[#FFFBF1] text-gray-800 hover:border-[#E36A6A]"
+                                    : "cursor-not-allowed border-gray-200 bg-[#F5F5F5] text-gray-500 opacity-90"
+                                  : isCorrectOption && isStudentOption
+                                    ? "border-green-500 bg-green-50 text-green-800"
+                                    : isCorrectOption
+                                      ? "border-green-500 bg-green-50 text-green-800"
+                                      : isStudentOption &&
+                                          !studentGotThisQuestionCorrect
+                                        ? "border-red-400 bg-red-50 text-red-700"
+                                        : "border-gray-200 bg-[#FFFBF1] text-gray-800"
+                              }`}
+                            >
+                              <div className="flex items-start justify-between gap-3">
+                                <div>
+                                  <span className="font-medium">
+                                    Option {optionIndex + 1}:
+                                  </span>{" "}
+                                  {option}
+                                </div>
+
+                                {drawerMode === "review" && (
+                                  <div className="flex shrink-0 flex-wrap gap-2">
+                                    {isCorrectOption && (
+                                      <span className="rounded-full bg-green-100 px-2.5 py-1 text-[11px] font-semibold text-green-700">
+                                        Correct Answer
+                                      </span>
+                                    )}
+
+                                    {isStudentOption && (
+                                      <span
+                                        className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${
+                                          studentGotThisQuestionCorrect
+                                            ? "bg-[#FDEAEA] text-[#E36A6A]"
+                                            : "bg-red-100 text-red-700"
+                                        }`}
+                                      >
+                                        Student Selected
+                                      </span>
+                                    )}
+                                  </div>
+                                )}
+                              </div>
                             </button>
                           );
                         },
                       )}
                     </div>
+                    {drawerMode === "review" && (
+                      <div className="rounded-xl bg-[#FFFBF1] px-4 py-3 text-sm ring-1 ring-black/5">
+                        <div className="flex flex-wrap gap-3 text-xs font-medium">
+                          <span className="rounded-full bg-green-100 px-2.5 py-1 text-green-700">
+                            Correct Answer: Option{" "}
+                            {Number(reviewCorrectAnswers[questionIndex] ?? -1) +
+                              1}
+                          </span>
+
+                          <span
+                            className={`rounded-full px-2.5 py-1 ${
+                              reviewIsCorrect[questionIndex]
+                                ? "bg-green-100 text-green-700"
+                                : "bg-red-100 text-red-700"
+                            }`}
+                          >
+                            Student Picked: Option{" "}
+                            {Number(reviewStudentAnswers[questionIndex] ?? -1) +
+                              1}
+                          </span>
+
+                          <span
+                            className={`rounded-full px-2.5 py-1 ${
+                              reviewIsCorrect[questionIndex]
+                                ? "bg-green-100 text-green-700"
+                                : "bg-red-100 text-red-700"
+                            }`}
+                          >
+                            {reviewIsCorrect[questionIndex]
+                              ? "Correct"
+                              : "Wrong"}
+                          </span>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
               ))}
@@ -386,19 +563,21 @@ const Exams = () => {
               Close
             </button>
 
-            {isStudent && questionTexts.length > 0 && (
-              <button
-                onClick={handleSubmitExam}
-                disabled={isSubmitting}
-                className="rounded-xl bg-[#E36A6A] px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:opacity-90 disabled:opacity-50"
-              >
-                {isTakeExamPending
-                  ? "Confirm in Wallet..."
-                  : isTakeExamConfirming
-                    ? "Submitting..."
-                    : "Submit Answers"}
-              </button>
-            )}
+            {isStudent &&
+              questionTexts.length > 0 &&
+              drawerMode === "answer" && (
+                <button
+                  onClick={handleSubmitExam}
+                  disabled={isSubmitting}
+                  className="rounded-xl bg-[#E36A6A] px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:opacity-90 disabled:opacity-50"
+                >
+                  {isTakeExamPending
+                    ? "Confirm in Wallet..."
+                    : isTakeExamConfirming
+                      ? "Submitting..."
+                      : "Submit Answers"}
+                </button>
+              )}
           </div>
         </div>
       </Drawer>

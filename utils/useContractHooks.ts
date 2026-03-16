@@ -86,7 +86,7 @@ function useAutoRefreshOnConfirm(hash?: `0x${string}`) {
 
   useEffect(() => {
     if (isConfirmed) {
-      window.location.reload();
+      // window.location.reload();
     }
   }, [isConfirmed]);
 
