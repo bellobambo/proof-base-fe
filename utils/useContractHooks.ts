@@ -78,15 +78,19 @@ export interface ExamReview {
 
 export type QuestionOptions = [string, string, string, string];
 
+
 function useAutoRefreshOnConfirm(hash?: `0x${string}`) {
   const { isLoading: isConfirming, isSuccess: isConfirmed } =
     useWaitForTransactionReceipt({
       hash,
+      query: {
+        enabled: !!hash,
+      },
     });
 
   useEffect(() => {
-    if (isConfirmed) {
-      // window.location.reload();
+    if (isConfirmed && typeof window !== "undefined") {
+      window.location.reload();
     }
   }, [isConfirmed]);
 
