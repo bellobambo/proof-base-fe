@@ -90,10 +90,13 @@ function useAutoRefreshOnConfirm(hash?: `0x${string}`) {
 
   useEffect(() => {
     if (isConfirmed && typeof window !== "undefined") {
-      window.location.reload();
+      const timer = setTimeout(() => {
+        window.location.reload();
+      }, 1500); 
+
+      return () => clearTimeout(timer);
     }
   }, [isConfirmed]);
-
   return { isConfirming, isConfirmed };
 }
 
