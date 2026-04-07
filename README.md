@@ -21,6 +21,7 @@ Users connect their wallet and register as either a **Tutor** or a **Student**. 
 
 **Network:** Base Testnet
 **Address:** `0x08758DDAbA20d43C1Ead2c9753939755177D25B0`
+**Smart contract repo:** https://github.com/bellobambo/proof-base
 
 
 Connect your wallet, register as a tutor or student, and start building or taking courses.
