@@ -20,7 +20,9 @@ Users connect their wallet and register as either a **Tutor** or a **Student**. 
 ## Smart Contract
 
 **Network:** Base Testnet
-**Address:** `0x08758DDAbA20d43C1Ead2c9753939755177D25B0`
+
+**Smart contract Address:** https://sepolia.basescan.org/address/0x08758ddaba20d43c1ead2c9753939755177d25b0
+
 **Smart contract repo:** https://github.com/bellobambo/proof-base
 
 
