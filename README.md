@@ -1,6 +1,6 @@
-# ProofBase
+# Proof
 
-A decentralized education platform built on the blockchain, where tutors can create courses and exams, and students can enroll, take exams, and have their results permanently recorded on-chain.
+Proof is a decentralized education platform built on the blockchain, where tutors can create courses and exams, and students can enroll, take exams, and have their results permanently recorded on-chain.
 
 ## What it does
 
