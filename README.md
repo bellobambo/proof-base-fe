@@ -35,15 +35,19 @@ Connect your wallet, register as a tutor or student, and start building or takin
 ```bash
    git clone https://github.com/bellobambo/proof-base-fe
 ```
-2. Install dependencies:
+2. Navigate into the project directory:
+```bash
+   cd proof-base-fe
+```
+3. Install dependencies:
 ```bash
    npm install
 ```
-3. Create a `.env.local` file and add:
+4. Create a `.env.local` file and add:
 ```
    NEXT_PUBLIC_ONCHAINKIT_API_KEY=your_api_key_here
 ```
-4. Start the dev server:
+5. Start the dev server:
 ```bash
    npm run dev
 ```
