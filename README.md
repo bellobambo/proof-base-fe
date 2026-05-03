@@ -27,3 +27,23 @@ Users connect their wallet and register as either a **Tutor** or a **Student**. 
 
 
 Connect your wallet, register as a tutor or student, and start building or taking courses.
+
+
+## Run Locally
+
+1. Clone the repo:
+```bash
+   git clone https://github.com/bellobambo/proof-base-fe
+```
+2. Install dependencies:
+```bash
+   npm install
+```
+3. Create a `.env.local` file and add:
+```
+   NEXT_PUBLIC_ONCHAINKIT_API_KEY=your_api_key_here
+```
+4. Start the dev server:
+```bash
+   npm run dev
+```
